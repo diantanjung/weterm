@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -18,14 +19,16 @@ type commandResponse struct {
 }
 
 func (server *Server) RunCommand(ctx *gin.Context) {
-	if !server.isUserHasDir(ctx) {
-		err := errors.New("Directory doesn't belong to the authenticated user")
-		ctx.JSON(http.StatusUnauthorized, errorResponse(err))
-		return
-	}
+	//if !server.isUserHasDir(ctx) {
+	//	err := errors.New("Directory doesn't belong to the authenticated user")
+	//	ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+	//	return
+	//}
+
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
 	dir := "/" + ctx.Param("dir") + "/"
-	path := server.config.BinPath + dir
+	path := server.config.BinPath + "/" + authPayload.Username + dir
 	runner := path + ctx.Param("cmd")
 
 	var args []string
@@ -63,17 +66,19 @@ type getSourceCodeResponse struct {
 }
 
 func (server *Server) GetSourceCode(ctx *gin.Context) {
-	if !server.isUserHasDir(ctx) {
-		err := errors.New("Directory doesn't belong to the authenticated user")
-		ctx.JSON(http.StatusUnauthorized, errorResponse(err))
-		return
-	}
+	//if !server.isUserHasDir(ctx) {
+	//	err := errors.New("Directory doesn't belong to the authenticated user")
+	//	ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+	//	return
+	//}
 	dir := ctx.Param("dir")
 	cmd := ctx.Param("cmd")
 
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
 	// main.go file
-	mainFile := server.config.BinPath + "/" + dir + "/" + cmd + ".src/main.go"
-	dirPath := server.config.BinPath + "/" + dir
+	mainFile := server.config.BinPath + "/" + authPayload.Username + "/" + dir + "/" + cmd + ".src/main.go"
+	dirPath := server.config.BinPath + "/" + authPayload.Username + "/" + dir
 	mainStr, err := ioutil.ReadFile(mainFile)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
@@ -98,24 +103,26 @@ type getFileContentResponse struct {
 }
 
 func (server *Server) GetFileContent(ctx *gin.Context) {
-	if !server.isUserHasDir(ctx) {
-		err := errors.New("Directory doesn't belong to the authenticated user")
-		ctx.JSON(http.StatusUnauthorized, errorResponse(err))
-		return
-	}
+	//if !server.isUserHasDir(ctx) {
+	//	err := errors.New("Directory doesn't belong to the authenticated user")
+	//	ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+	//	return
+	//}
 	dir := ctx.Param("dir")
 	cmd := ctx.Param("cmd")
 	file := ctx.Param("file")
 
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
 	// file
-	filePath := server.config.BinPath + "/" + dir + "/" + cmd + ".src/" + file
+	filePath := server.config.BinPath + "/" + authPayload.Username + "/" + dir + "/" + cmd + "/" + file
 	fileString, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
 		return
 	}
 	res := getFileContentResponse{
-		FileStr: string(fileString),
+		FileStr: strings.Trim(string(fileString), " "),
 	}
 	ctx.JSON(http.StatusOK, res)
 }
@@ -125,11 +132,11 @@ type updateFileContentRequest struct {
 }
 
 func (server *Server) UpdateFileContent(ctx *gin.Context) {
-	if !server.isUserHasDir(ctx) {
-		err := errors.New("Directory doesn't belong to the authenticated user")
-		ctx.JSON(http.StatusUnauthorized, errorResponse(err))
-		return
-	}
+	//if !server.isUserHasDir(ctx) {
+	//	err := errors.New("Directory doesn't belong to the authenticated user")
+	//	ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+	//	return
+	//}
 	var req updateFileContentRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, errorResponse(err))
@@ -140,7 +147,9 @@ func (server *Server) UpdateFileContent(ctx *gin.Context) {
 	cmd := ctx.Param("cmd")
 	file := ctx.Param("file")
 
-	pathFile := server.config.BinPath + "/" + dir + "/" + cmd + ".src/" + file
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
+	pathFile := server.config.BinPath + "/" + authPayload.Username + "/" + dir + "/" + cmd + "/" + file
 
 	err := ioutil.WriteFile(pathFile, []byte(req.FileStr), 0644)
 	if err != nil {
@@ -161,11 +170,11 @@ type updateSourceCodeRequest struct {
 }
 
 func (server *Server) UpdateSourceCode(ctx *gin.Context) {
-	if !server.isUserHasDir(ctx) {
-		err := errors.New("Directory doesn't belong to the authenticated user")
-		ctx.JSON(http.StatusUnauthorized, errorResponse(err))
-		return
-	}
+	//if !server.isUserHasDir(ctx) {
+	//	err := errors.New("Directory doesn't belong to the authenticated user")
+	//	ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+	//	return
+	//}
 	var req updateSourceCodeRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, errorResponse(err))
@@ -175,8 +184,10 @@ func (server *Server) UpdateSourceCode(ctx *gin.Context) {
 	dir := ctx.Param("dir")
 	cmd := ctx.Param("cmd")
 
-	mainFile := server.config.BinPath + "/" + dir + "/" + cmd + ".src/main.go"
-	dirPath := server.config.BinPath + "/" + dir
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
+	mainFile := server.config.BinPath + "/" + authPayload.Username + "/" + dir + "/" + cmd + ".src/main.go"
+	dirPath := server.config.BinPath + "/" + authPayload.Username + "/" + dir
 
 	err := ioutil.WriteFile(mainFile, []byte(req.MainStr), 0644)
 	if err != nil {
@@ -209,17 +220,18 @@ func (server *Server) UpdateSourceCode(ctx *gin.Context) {
 func (server *Server) CreateCommand(ctx *gin.Context) {
 	dir := ctx.Param("dir")
 	cmd := ctx.Param("cmd")
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 	// mkdir newdir ; cp -r master/main.src newdir/newcommand.src ; cp master/main newdir/newcommand
 	exeCmd := exec.Command("mkdir", dir)
-	exeCmd.Dir = server.config.BinPath
+	exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
 	_, _ = exeCmd.Output()
 
 	exeCmd = exec.Command("cp", "-r", "master/main.src", dir+"/"+cmd+".src")
-	exeCmd.Dir = server.config.BinPath
+	exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
 	_, _ = exeCmd.Output()
 
 	exeCmd = exec.Command("cp", "master/main", dir+"/"+cmd)
-	exeCmd.Dir = server.config.BinPath
+	exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
 	_, _ = exeCmd.Output()
 
 	if !server.isUserHasDir(ctx) {
@@ -243,20 +255,22 @@ func (server *Server) CreateCommand(ctx *gin.Context) {
 }
 
 func (server *Server) DeleteCommand(ctx *gin.Context) {
-	if !server.isUserHasDir(ctx) {
-		err := errors.New("Directory doesn't belong to the authenticated user")
-		ctx.JSON(http.StatusUnauthorized, errorResponse(err))
-		return
-	}
+	//if !server.isUserHasDir(ctx) {
+	//	err := errors.New("Directory doesn't belong to the authenticated user")
+	//	ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+	//	return
+	//}
 	dir := ctx.Param("dir")
 	cmd := ctx.Param("cmd")
 
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
 	exeCmd := exec.Command("rm", "-r", dir+"/"+cmd+".src")
-	exeCmd.Dir = server.config.BinPath
+	exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
 	_, _ = exeCmd.Output()
 
 	exeCmd = exec.Command("rm", dir+"/"+cmd)
-	exeCmd.Dir = server.config.BinPath
+	exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
 	_, _ = exeCmd.Output()
 
 	res := commandResponse{
@@ -310,7 +324,7 @@ func (server *Server) GetCommands(ctx *gin.Context) {
 	}
 
 	res := []getCommandsResponse{}
-	dirs, err := ioutil.ReadDir(server.config.BinPath)
+	dirs, err := ioutil.ReadDir(server.config.BinPath + "/" + authPayload.Username)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
 	}
@@ -319,7 +333,7 @@ func (server *Server) GetCommands(ctx *gin.Context) {
 	var cmd, dirStr string
 	for _, dir := range dirs {
 		if dir.IsDir() && strings.Index(userDirsStr, "|"+dir.Name()+"|") > -1 {
-			files, _ := ioutil.ReadDir(server.config.BinPath + "/" + dir.Name())
+			files, _ := ioutil.ReadDir(server.config.BinPath + "/" + authPayload.Username + "/" + dir.Name())
 			dirStr = dir.Name()
 			for _, file := range files {
 				if !file.IsDir() && strings.Index(file.Name(), ".") < 0 {
@@ -345,9 +359,9 @@ func (server *Server) GetCommands(ctx *gin.Context) {
 //	dir := ctx.Param("dir")
 //	cmd := ctx.Param("cmd")
 //	exe := ctx.Param("exe")
-//	mainFile := server.config.BinPath + "/" + dir + "/" + cmd + ".src/main.go"
-//	dirRunner := server.config.BinPath + "/" + dir
-//	dirSrc := server.config.BinPath + "/" + dir + "/" + cmd + ".src"
+//	mainFile := server.config.BinPath + "/" + authPayload.Username + "/" + dir + "/" + cmd + ".src/main.go"
+//	dirRunner := server.config.BinPath + "/" + authPayload.Username + "/" + dir
+//	dirSrc := server.config.BinPath + "/" + authPayload.Username + "/" + dir + "/" + cmd + ".src"
 //
 //	var commandStr string
 //	var commandDir string
@@ -394,7 +408,8 @@ func (server *Server) GetCommands(ctx *gin.Context) {
 //}
 
 type terminalRequest struct {
-	Exe string `json:"exe" binding:"required"`
+	Exe  string `json:"exe" binding:"required"`
+	Path string `json:"path" binding:"required"`
 }
 
 func (server *Server) Terminal(ctx *gin.Context) {
@@ -405,78 +420,163 @@ func (server *Server) Terminal(ctx *gin.Context) {
 	}
 	exeArr := strings.Split(req.Exe, " ")
 
-	if len(exeArr) > 2 {
-		err := errors.New("Format command not found. Try running `help`.")
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		return
-	}
+	//if len(exeArr) > 2 {
+	//	err := errors.New("Format command not found. Try running `help`.")
+	//	ctx.JSON(http.StatusBadRequest, errorResponse(err))
+	//	return
+	//}
+
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
+	reqPath := req.Path
+	reqPathArr := strings.Split(reqPath, "/")
+	lenPathArr := len(reqPathArr)
+	fullPath := server.config.BinPath + "/" + authPayload.Username + reqPath[1:]
 
 	message := ""
 	path := ""
-	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
 	switch exeArr[0] {
 	case "ls":
-		userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
+		if reqPathArr[0] != "~" && lenPathArr > 3 {
+			err := errors.New("Path not found")
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
+		}
+
+		dirs, err := ioutil.ReadDir(fullPath)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+			return
 		}
 
-		userDirsStr := "|"
-
-		for _, dir := range userDirs {
-			userDirsStr += dir.Name + "|"
-		}
-
-		//var listCmd []string
-		dirs, err := ioutil.ReadDir(server.config.BinPath)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
-		}
-
-		//var strCommand string
-		var cmd, dirStr string
 		for _, dir := range dirs {
-			if dir.IsDir() && strings.Index(userDirsStr, "|"+dir.Name()+"|") > -1 {
-				files, _ := ioutil.ReadDir(server.config.BinPath + "/" + dir.Name())
-				dirStr = dir.Name()
-				for _, file := range files {
-					if !file.IsDir() && strings.Index(file.Name(), ".") < 0 {
-						cmd = file.Name()
-						if cmd != "" && dirStr != "" {
-							//listCmd = append(listCmd, dirStr + "/" + cmd + "/main.go")
-							//listCmd = append(listCmd, dirStr + "/" + cmd + "/go.mod")
-							message += dirStr + "/" + cmd + "/main.go\n\r"
-							message += dirStr + "/" + cmd + "/go.mod\n\r\n\r"
-						}
-					}
-				}
+			message += dir.Name() + "\n\r"
+		}
+
+		//if lenPathArr == 1 {
+		//	userDirsStr := "|"
+		//	userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
+		//	if err != nil {
+		//		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		//		return
+		//	}
+		//
+		//	for _, dir := range userDirs {
+		//		userDirsStr += dir.Name + "|"
+		//	}
+		//
+		//	for _, dir := range dirs {
+		//		if dir.IsDir() && strings.Index(userDirsStr, "|"+dir.Name()+"|") > -1 {
+		//			message += dir.Name() + "\n\r"
+		//		}
+		//	}
+		//}else{
+		//	for _, dir := range dirs {
+		//		message += dir.Name() + "\n\r"
+		//	}
+		//}
+	case "cd":
+		isDot := false
+		for _, val := range exeArr[1] {
+			if val == 46 {
+				isDot = true
+			} else {
+				isDot = false
 			}
 		}
+
+		cdPath := ""
+		lenDot := len(exeArr[1])
+		if isDot && lenDot > 1 {
+			if lenPathArr < lenDot {
+				err := errors.New("Directory not found.")
+				ctx.JSON(http.StatusBadRequest, errorResponse(err))
+				return
+			}
+			joinStr := strings.Join(reqPathArr[1:lenPathArr-(lenDot-1)], "/")
+			if joinStr != "" {
+				cdPath = "/" + joinStr
+			}
+		} else {
+			cdPath = reqPath[1:] + "/" + exeArr[1]
+		}
+		if cdPath != "" {
+			//check permission
+			//userDirsStr := "|"
+			//userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
+			//if err != nil {
+			//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+			//	return
+			//}
+			//
+			//for _, dir := range userDirs {
+			//	userDirsStr += dir.Name + "|"
+			//}
+			//
+			//cdPathArr := strings.Split(cdPath, "/")
+			//if len(cdPathArr) > 0 {
+			//	if strings.Index(userDirsStr, "|"+cdPathArr[1]+"|") < 0 {
+			//		err := errors.New("Error permission to access directory.")
+			//		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			//		return
+			//	}
+			//}
+
+			if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + cdPath); err != nil || !fileInfo.IsDir() {
+				err := errors.New("Directory not found.")
+				ctx.JSON(http.StatusBadRequest, errorResponse(err))
+				return
+			}
+			message = "~" + cdPath
+		} else {
+			message = "~"
+		}
 	case "build":
-		dirCmdArr := strings.Split(exeArr[1], "/")
-		if len(dirCmdArr) > 2 {
+		lenExeArr := len(exeArr)
+		if lenExeArr != 3 {
 			err := errors.New("Format command not found. Try running `help`.")
 			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
 		}
-		dir := dirCmdArr[0]
-		cmd := dirCmdArr[1]
+		srcPath := reqPath[1:] + "/" + exeArr[1]
+		//userDirsStr := "|"
+		//userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
+		//if err != nil {
+		//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		//	return
+		//}
+		//
+		//for _, dir := range userDirs {
+		//	userDirsStr += dir.Name + "|"
+		//}
+		//
+		//srcPathArr := strings.Split(srcPath, "/")
+		//if len(srcPathArr) > 0 {
+		//	if strings.Index(userDirsStr, "|"+srcPathArr[1]+"|") < 0 {
+		//		err := errors.New("Error permission to access file/directory.")
+		//		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		//		return
+		//	}
+		//}
 
-		if !server.isUserHasDirectory(ctx, authPayload.UserID, dir) {
-			err := errors.New("Directory doesn't belong to the authenticated user")
-			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + srcPath); err != nil || fileInfo.IsDir() {
+			err := errors.New("File not found.")
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
 		}
 
+		destPathArr := strings.Split(reqPath[1:]+"/"+exeArr[2], "/")
+		lenDestPath := len(destPathArr)
+		destPath := strings.Join(destPathArr[:(lenDestPath-1)], "/")
+		runner := destPathArr[lenDestPath-1]
+
 		var args []string
-		mainFile := server.config.BinPath + "/" + dir + "/" + cmd + ".src/main.go"
-		dirRunner := server.config.BinPath + "/" + dir
-		//dirSrc := server.config.BinPath + "/" + dir + "/" + cmd + ".src"
 
 		commandStr := "/usr/local/go/bin/go"
-		args = append(args, "build", "-o", cmd, mainFile)
+		args = append(args, "build", "-o", runner, server.config.BinPath+"/"+authPayload.Username+srcPath)
 		exeCmd := exec.Command(commandStr, args[0:]...)
-		exeCmd.Dir = dirRunner
+		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username + destPath
 		stdout, err := exeCmd.Output()
 		if err != nil {
 			message = err.Error()
@@ -488,27 +588,44 @@ func (server *Server) Terminal(ctx *gin.Context) {
 			}
 		}
 	case "run":
-		dirCmdArr := strings.Split(exeArr[1], "/")
-		if len(dirCmdArr) > 2 {
-			err := errors.New("Format command not found. Try running `help`.")
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-		dir := dirCmdArr[0]
-		cmd := dirCmdArr[1]
+		filePath := reqPath[1:] + "/" + exeArr[1]
+		//userDirsStr := "|"
+		//userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
+		//if err != nil {
+		//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		//	return
+		//}
+		//
+		//for _, dir := range userDirs {
+		//	userDirsStr += dir.Name + "|"
+		//}
 
-		if !server.isUserHasDirectory(ctx, authPayload.UserID, dir) {
-			err := errors.New("Directory doesn't belong to the authenticated user")
-			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		//filePathArr := strings.Split(filePath, "/")
+		//if len(filePathArr) > 0 {
+		//	if strings.Index(userDirsStr, "|"+filePathArr[1]+"|") < 0 {
+		//		err := errors.New("Error permission to access file/directory.")
+		//		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		//		return
+		//	}
+		//}
+
+		if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath); err != nil || fileInfo.IsDir() {
+			err := errors.New("File not found.")
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
 		}
 
 		var args []string
-		dirRunner := server.config.BinPath + "/" + dir
+		runner := server.config.BinPath + "/" + authPayload.Username + filePath
+		runnerArr := strings.Split(runner, "/")
+		runnerDir := strings.Join(runnerArr[:(len(runnerArr)-1)], "/")
 
-		commandStr := dirRunner + "/" + cmd
-		exeCmd := exec.Command(commandStr, args[0:]...)
-		exeCmd.Dir = dirRunner
+		if len(exeArr) > 1 {
+			args = exeArr[2:]
+		}
+
+		exeCmd := exec.Command(runner, args[0:]...)
+		exeCmd.Dir = runnerDir
 		stdout, err := exeCmd.Output()
 		if err != nil {
 			message = err.Error()
@@ -519,29 +636,68 @@ func (server *Server) Terminal(ctx *gin.Context) {
 				message = "Succes to execute command"
 			}
 		}
-	case "open":
-		dirCmdArr := strings.Split(exeArr[1], "/")
-		if len(dirCmdArr) > 3 {
-			err := errors.New("Format command not found. Try running `help`.")
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-		dir := dirCmdArr[0]
-		cmd := dirCmdArr[1]
-		file := dirCmdArr[2]
+	case "edit":
+		filePath := reqPath[1:] + "/" + exeArr[1]
+		//userDirsStr := "|"
+		//userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
+		//if err != nil {
+		//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		//	return
+		//}
+		//
+		//for _, dir := range userDirs {
+		//	userDirsStr += dir.Name + "|"
+		//}
+		//
+		//filePathArr := strings.Split(filePath, "/")
+		//if len(filePathArr) > 0 {
+		//	if strings.Index(userDirsStr, "|"+filePathArr[1]+"|") < 0 {
+		//		err := errors.New("Error permission to access file/directory.")
+		//		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		//		return
+		//	}
+		//}
 
-		if !server.isUserHasDirectory(ctx, authPayload.UserID, dir) {
-			err := errors.New("Directory doesn't belong to the authenticated user")
-			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath); err != nil || fileInfo.IsDir() {
+			err := errors.New("File not found.")
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
 		}
 
 		//path = "<a href=\"editcode/" + dir + "/" + cmd + "\" >Edit command" + dir + "/" + cmd + " </a>"
-		path = "/openfile/" + dir + "/" + cmd + "/" + file
-
+		path = "/editfile" + filePath
+	case "adduser":
+		path = "/adduser"
+	case "mkdir":
+		exeCmd := exec.Command("mkdir", exeArr[1])
+		exeCmd.Dir = fullPath
+		stdout, err := exeCmd.Output()
+		if err != nil {
+			message = "Make directory failed."
+		} else {
+			if len(stdout) > 0 {
+				message = string(stdout)
+			} else {
+				message = "Succes to execute command"
+			}
+		}
+	case "rm":
+		exeCmd := exec.Command("rm", "-r", exeArr[1])
+		exeCmd.Dir = fullPath
+		stdout, err := exeCmd.Output()
+		if err != nil {
+			message = "Directory or file not found"
+		} else {
+			if len(stdout) > 0 {
+				message = string(stdout)
+			} else {
+				message = "Succes to execute command"
+			}
+		}
 	default:
 		err := errors.New("Format command not found. Try running `help`.")
 		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
 	}
 
 	res := commandResponse{

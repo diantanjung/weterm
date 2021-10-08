@@ -2,8 +2,10 @@ package api
 
 import (
 	"database/sql"
+	"errors"
 	"github.com/diantanjung/wecom/token"
 	"net/http"
+	"os/exec"
 	"time"
 
 	db "github.com/diantanjung/wecom/db/sqlc"
@@ -68,13 +70,23 @@ func (server *Server) createUser(ctx *gin.Context) {
 		return
 	}
 
+	exeCmd := exec.Command("mkdir", user.Username)
+	exeCmd.Dir = server.config.BinPath
+	_, err = exeCmd.Output()
+
+	if err != nil {
+		err := errors.New("Failed to create home directory user.")
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+
 	rsp := newUserResponse(user)
 	ctx.JSON(http.StatusOK, rsp)
 }
 
 type loginUserRequest struct {
-	Username string `json:"username" binding:"required,alphanum"`
-	Password string `json:"password" binding:"required,min=6"`
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
 }
 
 type loginUserResponse struct {
