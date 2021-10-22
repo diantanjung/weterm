@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"errors"
+	"github.com/creack/pty"
 	db "github.com/diantanjung/wecom/db/sqlc"
 	"github.com/diantanjung/wecom/token"
 	"github.com/gin-gonic/gin"
@@ -9,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
@@ -102,20 +105,22 @@ type getFileContentResponse struct {
 	FileStr string `json:"file_str"`
 }
 
+type getFileContentRequest struct {
+	PathStr string `json:"path_str" binding:"required"`
+}
+
 func (server *Server) GetFileContent(ctx *gin.Context) {
-	//if !server.isUserHasDir(ctx) {
-	//	err := errors.New("Directory doesn't belong to the authenticated user")
-	//	ctx.JSON(http.StatusUnauthorized, errorResponse(err))
-	//	return
-	//}
-	dir := ctx.Param("dir")
-	cmd := ctx.Param("cmd")
-	file := ctx.Param("file")
+	var req getFileContentRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+	file := req.PathStr
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
 	// file
-	filePath := server.config.BinPath + "/" + authPayload.Username + "/" + dir + "/" + cmd + "/" + file
+	filePath := server.config.BinPath + "/" + authPayload.Username + "/" + file
 	fileString, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
@@ -128,6 +133,7 @@ func (server *Server) GetFileContent(ctx *gin.Context) {
 }
 
 type updateFileContentRequest struct {
+	PathStr string `json:"path_str" binding:"required"`
 	FileStr string `json:"file_str" binding:"required"`
 }
 
@@ -142,14 +148,11 @@ func (server *Server) UpdateFileContent(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, errorResponse(err))
 		return
 	}
-
-	dir := ctx.Param("dir")
-	cmd := ctx.Param("cmd")
-	file := ctx.Param("file")
+	file := req.PathStr
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-	pathFile := server.config.BinPath + "/" + authPayload.Username + "/" + dir + "/" + cmd + "/" + file
+	pathFile := server.config.BinPath + "/" + authPayload.Username + "/" + file
 
 	err := ioutil.WriteFile(pathFile, []byte(req.FileStr), 0644)
 	if err != nil {
@@ -421,7 +424,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 	exeArr := strings.Split(req.Exe, " ")
 
 	//if len(exeArr) > 2 {
-	//	err := errors.New("Format command not found. Try running `help`.")
+	//	err := errors.New("Format command not found.")
 	//	ctx.JSON(http.StatusBadRequest, errorResponse(err))
 	//	return
 	//}
@@ -431,52 +434,66 @@ func (server *Server) Terminal(ctx *gin.Context) {
 	reqPath := req.Path
 	reqPathArr := strings.Split(reqPath, "/")
 	lenPathArr := len(reqPathArr)
-	fullPath := server.config.BinPath + "/" + authPayload.Username + reqPath[1:]
+	fullPath := server.config.BinPath + "/" + authPayload.Username + reqPath
 
 	message := ""
 	path := ""
 
 	switch exeArr[0] {
 	case "ls":
-		if reqPathArr[0] != "~" && lenPathArr > 3 {
-			err := errors.New("Path not found")
+		for i, val := range exeArr {
+			if val[0:1] == "/" {
+				exeArr[i] = server.config.BinPath + "/" + authPayload.Username + val
+			}
+		}
+		arguments := append([]string{"-F"}, exeArr[1:]...)
+		exeCmd := exec.Command("ls", arguments...)
+		//exeCmd := exec.Command("ls",exeArr[1:]...)
+		exeCmd.Dir = fullPath
+
+		f, err := pty.Start(exeCmd)
+		if err != nil {
 			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
 		}
 
-		dirs, err := ioutil.ReadDir(fullPath)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		var buf bytes.Buffer
+		_, err = buf.ReadFrom(f)
+		//if err != nil {
+		//	ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		//	return
+		//}
+
+		strOut := strings.Replace(buf.String(), "\\t", "\\t ", -1)
+
+		rgxDir := regexp.MustCompile(`([[:graph:]]+)/`)
+
+		rgxBin := regexp.MustCompile(`([[:graph:]]+)\*`)
+
+		strOut = rgxDir.ReplaceAllString(strOut, "\u001B[1;34m$1\u001B[0m")
+
+		strOut = rgxBin.ReplaceAllString(strOut, "\u001B[1;31m$1\u001B[0m")
+
+		message = strOut
+	case "cd":
+		if len(exeArr) != 2 {
+			err := errors.New("Format command not found.")
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
 		}
 
-		for _, dir := range dirs {
-			message += dir.Name() + "\n\r"
+		if exeArr[1] == "" {
+			err := errors.New("")
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
 		}
 
-		//if lenPathArr == 1 {
-		//	userDirsStr := "|"
-		//	userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
-		//	if err != nil {
-		//		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
-		//		return
-		//	}
-		//
-		//	for _, dir := range userDirs {
-		//		userDirsStr += dir.Name + "|"
-		//	}
-		//
-		//	for _, dir := range dirs {
-		//		if dir.IsDir() && strings.Index(userDirsStr, "|"+dir.Name()+"|") > -1 {
-		//			message += dir.Name() + "\n\r"
-		//		}
-		//	}
-		//}else{
-		//	for _, dir := range dirs {
-		//		message += dir.Name() + "\n\r"
-		//	}
-		//}
-	case "cd":
+		rgx := regexp.MustCompile(`/{2,}`)
+		exeArr[1] = rgx.ReplaceAllString(exeArr[1], "/")
+
+		rgx = regexp.MustCompile(`(.)/+$`)
+		exeArr[1] = rgx.ReplaceAllString(exeArr[1], "$1")
+
 		isDot := false
 		for _, val := range exeArr[1] {
 			if val == 46 {
@@ -499,118 +516,161 @@ func (server *Server) Terminal(ctx *gin.Context) {
 				cdPath = "/" + joinStr
 			}
 		} else {
-			cdPath = reqPath[1:] + "/" + exeArr[1]
+			if exeArr[1][0:1] == "/" {
+				cdPath = exeArr[1]
+			} else {
+				lenReqPath := len(reqPath)
+				if reqPath[lenReqPath-1:lenReqPath] == "/" {
+					cdPath = reqPath + exeArr[1]
+				} else {
+					cdPath = reqPath + "/" + exeArr[1]
+				}
+			}
 		}
 		if cdPath != "" {
-			//check permission
-			//userDirsStr := "|"
-			//userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
-			//if err != nil {
-			//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
-			//	return
-			//}
-			//
-			//for _, dir := range userDirs {
-			//	userDirsStr += dir.Name + "|"
-			//}
-			//
-			//cdPathArr := strings.Split(cdPath, "/")
-			//if len(cdPathArr) > 0 {
-			//	if strings.Index(userDirsStr, "|"+cdPathArr[1]+"|") < 0 {
-			//		err := errors.New("Error permission to access directory.")
-			//		ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			//		return
-			//	}
-			//}
-
 			if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + cdPath); err != nil || !fileInfo.IsDir() {
 				err := errors.New("Directory not found.")
 				ctx.JSON(http.StatusBadRequest, errorResponse(err))
 				return
 			}
-			message = "~" + cdPath
+			message = cdPath
 		} else {
-			message = "~"
+			message = "/"
 		}
-	case "build":
-		lenExeArr := len(exeArr)
-		if lenExeArr != 3 {
-			err := errors.New("Format command not found. Try running `help`.")
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-		srcPath := reqPath[1:] + "/" + exeArr[1]
-		//userDirsStr := "|"
-		//userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
-		//if err != nil {
-		//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
-		//	return
-		//}
-		//
-		//for _, dir := range userDirs {
-		//	userDirsStr += dir.Name + "|"
-		//}
-		//
-		//srcPathArr := strings.Split(srcPath, "/")
-		//if len(srcPathArr) > 0 {
-		//	if strings.Index(userDirsStr, "|"+srcPathArr[1]+"|") < 0 {
-		//		err := errors.New("Error permission to access file/directory.")
-		//		ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		//		return
-		//	}
-		//}
-
-		if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + srcPath); err != nil || fileInfo.IsDir() {
-			err := errors.New("File not found.")
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-
-		destPathArr := strings.Split(reqPath[1:]+"/"+exeArr[2], "/")
-		lenDestPath := len(destPathArr)
-		destPath := strings.Join(destPathArr[:(lenDestPath-1)], "/")
-		runner := destPathArr[lenDestPath-1]
-
-		var args []string
-
-		commandStr := "/usr/local/go/bin/go"
-		args = append(args, "build", "-o", runner, server.config.BinPath+"/"+authPayload.Username+srcPath)
-		exeCmd := exec.Command(commandStr, args[0:]...)
-		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username + destPath
-		stdout, err := exeCmd.Output()
+	case "go":
+		exeCmd := exec.Command(server.config.GoBinPath, exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
 		if err != nil {
-			message = err.Error()
+			message = stderr.String()
 		} else {
-			if len(stdout) > 0 {
-				message = string(stdout)
-			} else {
-				message = "Succes to build command"
-			}
+			message = out.String()
 		}
-	case "run":
-		filePath := reqPath[1:] + "/" + exeArr[1]
-		//userDirsStr := "|"
-		//userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
-		//if err != nil {
-		//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
-		//	return
-		//}
-		//
-		//for _, dir := range userDirs {
-		//	userDirsStr += dir.Name + "|"
-		//}
-
-		//filePathArr := strings.Split(filePath, "/")
-		//if len(filePathArr) > 0 {
-		//	if strings.Index(userDirsStr, "|"+filePathArr[1]+"|") < 0 {
-		//		err := errors.New("Error permission to access file/directory.")
-		//		ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		//		return
-		//	}
-		//}
+	case "cargo":
+		exeCmd := exec.Command(server.config.CargoBinPath, exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			message = out.String()
+		}
+	case "edit":
+		if len(exeArr) < 2 {
+			err := errors.New("Format command not found.")
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
+		}
+		filePath := reqPath + "/" + exeArr[1]
 
 		if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath); err != nil || fileInfo.IsDir() {
-			err := errors.New("File not found.")
+			_, err := os.Create(server.config.BinPath + "/" + authPayload.Username + filePath)
+			if err != nil {
+				err := errors.New("Write file error. Check permission")
+				ctx.JSON(http.StatusBadRequest, errorResponse(err))
+				return
+			}
+		}
+
+		//path = "<a href=\"editcode/" + dir + "/" + cmd + "\" >Edit command" + dir + "/" + cmd + " </a>"
+		path = "/editfile" + filePath
+	case "adduser":
+		path = "/adduser"
+	case "mkdir":
+		exeCmd := exec.Command("mkdir", exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			message = out.String()
+		}
+	case "rm":
+		exeCmd := exec.Command("rm", exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			message = out.String()
+		}
+	case "rmdir":
+		exeCmd := exec.Command("rmdir", exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			message = out.String()
+		}
+	case "touch":
+		exeCmd := exec.Command("touch", exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			message = out.String()
+		}
+	case "cat":
+		exeCmd := exec.Command("cat", exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			message = out.String()
+		}
+	case "pwd":
+		exeCmd := exec.Command("pwd")
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			strCut := strings.Replace(out.String(), server.config.BinPath+"/"+authPayload.Username, "", -1)
+			if strCut == "\n" {
+				message = "/"
+			} else {
+				message = strCut
+			}
+		}
+	default:
+		filePath := reqPath + "/" + exeArr[0]
+		if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath); err != nil || fileInfo.IsDir() {
+			err = errors.New("Format command not found.")
 			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
 		}
@@ -626,78 +686,20 @@ func (server *Server) Terminal(ctx *gin.Context) {
 
 		exeCmd := exec.Command(runner, args[0:]...)
 		exeCmd.Dir = runnerDir
-		stdout, err := exeCmd.Output()
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
 		if err != nil {
-			message = err.Error()
+			message = stderr.String()
 		} else {
-			if len(stdout) > 0 {
-				message = string(stdout)
+			if len(out.String()) > 0 {
+				message = out.String()
 			} else {
-				message = "Succes to execute command"
+				message = "Succes to execute command."
 			}
 		}
-	case "edit":
-		filePath := reqPath[1:] + "/" + exeArr[1]
-		//userDirsStr := "|"
-		//userDirs, err := server.querier.GetUserDirs(ctx, authPayload.UserID)
-		//if err != nil {
-		//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
-		//	return
-		//}
-		//
-		//for _, dir := range userDirs {
-		//	userDirsStr += dir.Name + "|"
-		//}
-		//
-		//filePathArr := strings.Split(filePath, "/")
-		//if len(filePathArr) > 0 {
-		//	if strings.Index(userDirsStr, "|"+filePathArr[1]+"|") < 0 {
-		//		err := errors.New("Error permission to access file/directory.")
-		//		ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		//		return
-		//	}
-		//}
-
-		if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath); err != nil || fileInfo.IsDir() {
-			err := errors.New("File not found.")
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-
-		//path = "<a href=\"editcode/" + dir + "/" + cmd + "\" >Edit command" + dir + "/" + cmd + " </a>"
-		path = "/editfile" + filePath
-	case "adduser":
-		path = "/adduser"
-	case "mkdir":
-		exeCmd := exec.Command("mkdir", exeArr[1])
-		exeCmd.Dir = fullPath
-		stdout, err := exeCmd.Output()
-		if err != nil {
-			message = "Make directory failed."
-		} else {
-			if len(stdout) > 0 {
-				message = string(stdout)
-			} else {
-				message = "Succes to execute command"
-			}
-		}
-	case "rm":
-		exeCmd := exec.Command("rm", "-r", exeArr[1])
-		exeCmd.Dir = fullPath
-		stdout, err := exeCmd.Output()
-		if err != nil {
-			message = "Directory or file not found"
-		} else {
-			if len(stdout) > 0 {
-				message = string(stdout)
-			} else {
-				message = "Succes to execute command"
-			}
-		}
-	default:
-		err := errors.New("Format command not found. Try running `help`.")
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		return
 	}
 
 	res := commandResponse{

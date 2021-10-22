@@ -20,6 +20,8 @@ type Config struct {
 	AccessTokenDuration time.Duration
 	TokenSymmetricKey   string
 	FeUrl               string
+	CargoBinPath        string
+	GoBinPath           string
 }
 
 func LoadConfig(path string) (config Config, err error) {
@@ -41,6 +43,8 @@ func LoadConfig(path string) (config Config, err error) {
 	config.AccessTokenDuration, err = time.ParseDuration(os.Getenv("ACCESS_TOKEN_DURATION"))
 	config.TokenSymmetricKey = os.Getenv("TOKEN_SYMMETRIC_KEY")
 	config.FeUrl = os.Getenv("FE_URL")
+	config.CargoBinPath = os.Getenv("CARGO_BIN_PATH")
+	config.GoBinPath = os.Getenv("GO_BIN_PATH")
 
 	return
 }

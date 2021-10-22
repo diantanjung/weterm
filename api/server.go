@@ -53,6 +53,7 @@ func (server *Server) setupRouter() {
 	router.Use(server.CORSMiddleware())
 
 	router.POST("/users/login", server.loginUser)
+	router.GET("/ws", server.WebSocket)
 
 	authRoutes := router.Group("/").Use(authMiddleware(server.tokenMaker))
 	authRoutes.POST("/users", server.createUser)
@@ -69,11 +70,12 @@ func (server *Server) setupRouter() {
 	authRoutes.DELETE("/command/:dir/:cmd", server.DeleteCommand)
 	authRoutes.GET("/run/:dir/:cmd", server.RunCommand)
 
-	authRoutes.GET("/command/:dir/:cmd/:file", server.GetFileContent)
-	authRoutes.PATCH("/command/:dir/:cmd/:file", server.UpdateFileContent)
+	authRoutes.POST("/open", server.GetFileContent)
+	authRoutes.PATCH("/open", server.UpdateFileContent)
 	//authRoutes.GET("/terminal/:dir/:cmd/:exe", server.Terminal)
 
 	authRoutes.POST("/terminal", server.Terminal)
+	//authRoutes.POST("/ws", server.WebSocket)
 
 	server.router = router
 }
