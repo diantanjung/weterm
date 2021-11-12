@@ -68,13 +68,17 @@ func (server *Server) setupRouter() {
 	authRoutes.GET("/command/:dir/:cmd", server.GetSourceCode)
 	authRoutes.PATCH("/command/:dir/:cmd", server.UpdateSourceCode)
 	authRoutes.DELETE("/command/:dir/:cmd", server.DeleteCommand)
-	authRoutes.GET("/run/:dir/:cmd", server.RunCommand)
+	authRoutes.GET("/exe/:dir/:cmd", server.ExeCommand)
 
 	authRoutes.POST("/open", server.GetFileContent)
 	authRoutes.PATCH("/open", server.UpdateFileContent)
 	//authRoutes.GET("/terminal/:dir/:cmd/:exe", server.Terminal)
 
+	authRoutes.POST("/opendir", server.GetDirContent)
+
 	authRoutes.POST("/terminal", server.Terminal)
+	authRoutes.POST("/autocomplete", server.AutoComplete)
+	authRoutes.POST("/run", server.RunCommand)
 	//authRoutes.POST("/ws", server.WebSocket)
 
 	server.router = router

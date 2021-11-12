@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	pathDir = "/Users/diantanjung/Projects/web/go/wecom/" //local
-	//pathDir = "/home/dian/go/bin/wecom2/" //production
+	//pathDir = "/Users/diantanjung/Projects/web/go/wecom/" //local
+	pathDir = "/home/dian/go/bin/wecom2/" //production
 )
 
 func main() {

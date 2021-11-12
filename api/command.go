@@ -21,7 +21,7 @@ type commandResponse struct {
 	Message string `json:"message"`
 }
 
-func (server *Server) RunCommand(ctx *gin.Context) {
+func (server *Server) ExeCommand(ctx *gin.Context) {
 	//if !server.isUserHasDir(ctx) {
 	//	err := errors.New("Directory doesn't belong to the authenticated user")
 	//	ctx.JSON(http.StatusUnauthorized, errorResponse(err))
@@ -563,7 +563,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		} else {
 			message = out.String()
 		}
-	case "edit":
+	case "open":
 		if len(exeArr) < 2 {
 			err := errors.New("Format command not found.")
 			ctx.JSON(http.StatusBadRequest, errorResponse(err))
@@ -571,7 +571,8 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		}
 		filePath := reqPath + "/" + exeArr[1]
 
-		if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath); err != nil || fileInfo.IsDir() {
+		fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath)
+		if err != nil {
 			_, err := os.Create(server.config.BinPath + "/" + authPayload.Username + filePath)
 			if err != nil {
 				err := errors.New("Write file error. Check permission")
@@ -579,9 +580,14 @@ func (server *Server) Terminal(ctx *gin.Context) {
 				return
 			}
 		}
-
-		//path = "<a href=\"editcode/" + dir + "/" + cmd + "\" >Edit command" + dir + "/" + cmd + " </a>"
-		path = "/editfile" + filePath
+		if fileInfo != nil && fileInfo.IsDir() {
+			path = "/opendir" + filePath
+		} else if !strings.Contains(fileInfo.Name(), ".") {
+			path = "/run" + filePath
+		} else {
+			//path = "<a href=\"editcode/" + dir + "/" + cmd + "\" >Edit command" + dir + "/" + cmd + " </a>"
+			path = "/editfile" + filePath
+		}
 	case "adduser":
 		path = "/adduser"
 	case "mkdir":
@@ -709,4 +715,174 @@ func (server *Server) Terminal(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, res)
 	return
+}
+
+type autoCompleteRequest struct {
+	Term string `json:"term"`
+	Path string `json:"path" binding:"required"`
+}
+
+type autoCompleteResponse struct {
+	Colored []string `json:"colored"`
+	Pure    []string `json:"pure"`
+	Rest    string   `json:"rest"`
+}
+
+func (server *Server) AutoComplete(ctx *gin.Context) {
+	var req autoCompleteRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+
+	spaceIdx := strings.LastIndex(req.Term, " ")
+	termAuto := ""
+	cmdAuto := ""
+	if spaceIdx > -1 {
+		termAuto = req.Term[spaceIdx+1:]
+		cmdAuto = req.Term[:spaceIdx]
+	} else {
+		termAuto = req.Term
+	}
+
+	slashIdx := strings.LastIndex(termAuto, "/")
+	termPath := ""
+	termRest := ""
+	if slashIdx > -1 {
+		termPath = termAuto[:slashIdx+1]
+		termRest = termAuto[slashIdx+1:]
+	} else {
+		termRest = termAuto
+	}
+
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	fullPath := server.config.BinPath + "/" + authPayload.Username + req.Path + termPath
+
+	dirs, err := ioutil.ReadDir(fullPath)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+	}
+
+	var res, raw []string
+	for _, dir := range dirs {
+		if strings.HasPrefix(dir.Name(), termRest) {
+			if dir.IsDir() {
+				res = append(res, "\u001B[1;34m"+dir.Name()+"\u001B[0m")
+			} else {
+				if strings.Contains(dir.Name(), ".") {
+					res = append(res, "\u001B[1;37m"+dir.Name()+"\u001B[0m")
+				} else {
+					res = append(res, "\u001B[1;31m"+dir.Name()+"\u001B[0m")
+				}
+			}
+			raw = append(raw, dir.Name())
+		}
+	}
+
+	if len(res) == 1 && cmdAuto != "" {
+		lenRes := len(res[0])
+		res[0] = cmdAuto + " " + termPath + res[0][7:lenRes-4]
+		raw[0] = cmdAuto + " " + termPath + res[0]
+	}
+
+	resp := autoCompleteResponse{
+		Colored: res,
+		Pure:    raw,
+		Rest:    termRest,
+	}
+
+	ctx.JSON(http.StatusOK, resp)
+}
+
+type getDirContentRequest struct {
+	PathStr string `json:"path_str" binding:"required"`
+}
+
+type dirContent struct {
+	Id       int    `json:"id"`
+	Filename string `json:"filename"`
+	IsDir    bool   `json:"isdir"`
+	Size     int64  `json:"size"`
+	Path     string `json:"path"`
+	ModTime  string `json:"mod_time"`
+}
+
+func (server *Server) GetDirContent(ctx *gin.Context) {
+	var req getDirContentRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
+	// file
+	dirPath := server.config.BinPath + "/" + authPayload.Username + "/" + req.PathStr
+	dirs, err := ioutil.ReadDir(dirPath)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+	}
+
+	var res []dirContent
+	const layoutTime = "2006-01-02 15:04:05"
+	for id, dir := range dirs {
+		res = append(res, dirContent{
+			Id:       id,
+			Filename: dir.Name(),
+			IsDir:    dir.IsDir(),
+			Size:     dir.Size(),
+			Path:     req.PathStr + "/" + dir.Name(),
+			ModTime:  dir.ModTime().Format(layoutTime),
+		})
+	}
+	ctx.JSON(http.StatusOK, res)
+}
+
+type runCommandRequest struct {
+	PathStr string `json:"path_str" binding:"required"`
+}
+
+func (server *Server) RunCommand(ctx *gin.Context) {
+	var req runCommandRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
+	// file
+	fullPath := server.config.BinPath + "/" + authPayload.Username + "/" + req.PathStr
+	runnerArr := strings.Split(fullPath, "/")
+	runnerDir := strings.Join(runnerArr[:(len(runnerArr)-1)], "/")
+	if fileInfo, err := os.Stat(fullPath); err != nil || fileInfo.IsDir() {
+		err = errors.New("Command or file not found.")
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+
+	exeCmd := exec.Command(fullPath)
+	exeCmd.Dir = runnerDir
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	exeCmd.Stdout = &out
+	exeCmd.Stderr = &stderr
+	err := exeCmd.Run()
+	var message string
+	if err != nil {
+		message = stderr.String()
+	} else {
+		if len(out.String()) > 0 {
+			message = out.String()
+		} else {
+			message = "Succes to execute command."
+		}
+	}
+
+	res := commandResponse{
+		Path:    req.PathStr,
+		Message: message,
+	}
+
+	ctx.JSON(http.StatusOK, res)
 }
