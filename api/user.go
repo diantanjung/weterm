@@ -101,7 +101,7 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		return
 	}
 
-	user, err := server.querier.GetUser(ctx, req.Username)
+	userLogin, err := server.querier.GetUser(ctx, req.Username)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			ctx.JSON(http.StatusNotFound, errorResponse(err))
@@ -111,15 +111,15 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		return
 	}
 
-	err = util.CheckPassword(req.Password, user.Password)
+	err = util.CheckPassword(req.Password, userLogin.Password)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, errorResponse(err))
 		return
 	}
 
 	accessToken, err := server.tokenMaker.CreateToken(
-		user.UserID,
-		user.Username,
+		userLogin.UserID,
+		userLogin.Username,
 		server.config.AccessTokenDuration,
 	)
 	if err != nil {
@@ -131,8 +131,52 @@ func (server *Server) loginUser(ctx *gin.Context) {
 
 	rsp := loginUserResponse{
 		AccessToken: accessToken,
-		User:        newUserResponse(user),
+		User:        newUserResponse(userLogin),
 	}
+
+	//path := server.config.BinPath + "/" + userLogin.Username
+	//
+	//newUser, err := user.Lookup(userLogin.Username)
+	//if err != nil {
+	//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+	//	return
+	//}
+	//uid, err := strconv.Atoi(newUser.Uid)
+	//if err != nil {
+	//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+	//	return
+	//}
+	//gid, err := strconv.Atoi(newUser.Gid)
+	//if err != nil {
+	//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+	//	return
+	//}
+	//// Change file ownership.
+	//err = os.Chown(path, uid , gid)
+	//
+	//if err != nil {
+	//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+	//	return
+	//}
+
+	//exeCmd := exec.Command("chown","-R" , userLogin.Username, userLogin.Username)
+	//exeCmd.Dir = server.config.BinPath
+	//err = exeCmd.Run()
+	//
+	//if err != nil {
+	//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+	//	return
+	//}
+	//
+	//exeCmd = exec.Command("chgrp","-R" , userLogin.Username, userLogin.Username)
+	//exeCmd.Dir = server.config.BinPath
+	//err = exeCmd.Run()
+	//
+	//if err != nil {
+	//	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+	//	return
+	//}
+
 	ctx.JSON(http.StatusOK, rsp)
 }
 

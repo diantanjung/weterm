@@ -11,8 +11,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
+	"runtime"
 	"strings"
+	"syscall"
 )
 
 type commandResponse struct {
@@ -421,6 +424,10 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, errorResponse(err))
 		return
 	}
+	rgxExe := regexp.MustCompile(` {2,}`)
+	req.Exe = rgxExe.ReplaceAllString(req.Exe, " ")
+	req.Exe = strings.Trim(req.Exe, " ")
+
 	exeArr := strings.Split(req.Exe, " ")
 
 	//if len(exeArr) > 2 {
@@ -437,13 +444,30 @@ func (server *Server) Terminal(ctx *gin.Context) {
 	fullPath := server.config.BinPath + "/" + authPayload.Username + reqPath
 
 	message := ""
-	path := ""
+	pathStr := ""
 
 	switch exeArr[0] {
 	case "ls":
+		//if len(exeArr) == 2 {
+		//	if exeArr[1] == ".." && reqPath == "/" {
+		//		exeArr[1] = "/"
+		//	}
+		//}
+
+		rgxPath := regexp.MustCompile(`\.\.`)
+
 		for i, val := range exeArr {
 			if val[0:1] == "/" {
 				exeArr[i] = server.config.BinPath + "/" + authPayload.Username + val
+			}
+
+			if rgxPath.MatchString(val) {
+				pathTemp := path.Join(fullPath+"/", val)
+				if !strings.Contains(pathTemp, server.config.BinPath+"/"+authPayload.Username) {
+					err := errors.New("Location not found.")
+					ctx.JSON(http.StatusBadRequest, errorResponse(err))
+					return
+				}
 			}
 		}
 		arguments := append([]string{"-F"}, exeArr[1:]...)
@@ -571,25 +595,26 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		}
 		filePath := reqPath + "/" + exeArr[1]
 
-		fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath)
-		if err != nil {
-			_, err := os.Create(server.config.BinPath + "/" + authPayload.Username + filePath)
-			if err != nil {
-				err := errors.New("Write file error. Check permission")
-				ctx.JSON(http.StatusBadRequest, errorResponse(err))
-				return
-			}
-		}
-		if fileInfo != nil && fileInfo.IsDir() {
-			path = "/opendir" + filePath
-		} else if !strings.Contains(fileInfo.Name(), ".") {
-			path = "/run" + filePath
-		} else {
-			//path = "<a href=\"editcode/" + dir + "/" + cmd + "\" >Edit command" + dir + "/" + cmd + " </a>"
-			path = "/editfile" + filePath
-		}
+		//fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath)
+		//if err != nil {
+		//	_, err := os.Create(server.config.BinPath + "/" + authPayload.Username + filePath)
+		//	if err != nil {
+		//		err := errors.New("Write file error. Check permission")
+		//		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		//		return
+		//	}
+		//}
+		//if fileInfo != nil && fileInfo.IsDir() {
+		//	pathStr = "/opendir" + filePath
+		//} else if !strings.Contains(fileInfo.Name(), ".") {
+		//	pathStr = "/run" + filePath
+		//} else {
+		//	//pathStr = "<a href=\"editcode/" + dir + "/" + cmd + "\" >Edit command" + dir + "/" + cmd + " </a>"
+		//	pathStr = "/editfile" + filePath
+		//}
+		pathStr = "/@" + authPayload.Username + filePath
 	case "adduser":
-		path = "/adduser"
+		pathStr = "/adduser"
 	case "mkdir":
 		exeCmd := exec.Command("mkdir", exeArr[1:]...)
 		exeCmd.Dir = fullPath
@@ -642,6 +667,19 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		} else {
 			message = out.String()
 		}
+	case "ln":
+		exeCmd := exec.Command("ln", exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			message = out.String()
+		}
 	case "cat":
 		exeCmd := exec.Command("cat", exeArr[1:]...)
 		exeCmd.Dir = fullPath
@@ -682,39 +720,127 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		}
 
 		var args []string
-		runner := server.config.BinPath + "/" + authPayload.Username + filePath
-		runnerArr := strings.Split(runner, "/")
+		//runner := server.config.BinPath + "/" + authPayload.Username + filePath
+		runnerArr := strings.Split(filePath, "/")
 		runnerDir := strings.Join(runnerArr[:(len(runnerArr)-1)], "/")
 
 		if len(exeArr) > 1 {
 			args = exeArr[2:]
 		}
 
-		exeCmd := exec.Command(runner, args[0:]...)
+		//copy /dev/null
+		exeCmd := exec.Command("mkdir", "dev")
+		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
+		err := exeCmd.Run()
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
+		}
+
+		exeCmd = exec.Command("cp", "/dev/null", "dev/null")
+		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
+		err = exeCmd.Run()
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
+		}
+
+		//Chroot in user home
+		exit, err := server.Chroot(server.config.BinPath + "/" + authPayload.Username)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
+		}
+
+		exeCmd = exec.Command(filePath, args[0:]...)
 		exeCmd.Dir = runnerDir
+		//exeCmd := exec.Command(filePath)
+		//exeCmd.Dir = reqPath
 		var out bytes.Buffer
 		var stderr bytes.Buffer
 		exeCmd.Stdout = &out
 		exeCmd.Stderr = &stderr
-		err := exeCmd.Run()
+		err = exeCmd.Run()
 		if err != nil {
-			message = stderr.String()
-		} else {
-			if len(out.String()) > 0 {
-				message = out.String()
-			} else {
-				message = "Succes to execute command."
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			exit()
+			exeCmd = exec.Command("rm", "-r", server.config.BinPath+"/"+authPayload.Username+"/dev")
+			exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
+			err := exeCmd.Run()
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, errorResponse(err))
+				return
 			}
+			return
+		}
+
+		if len(out.String()) > 0 {
+			message = out.String()
+		} else {
+			message = "Succes to execute command."
+		}
+
+		//exit from the chroot
+		if err := exit(); err != nil {
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
+		}
+		exeCmd = exec.Command("rm", "-r", server.config.BinPath+"/"+authPayload.Username+"/dev")
+		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
+		err = exeCmd.Run()
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
+		}
+	}
+
+	if os := runtime.GOOS; os == "linux" {
+		exeCmd := exec.Command("chown", "-R", authPayload.Username, fullPath)
+		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
+		err := exeCmd.Run()
+
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
+		}
+
+		exeCmd = exec.Command("chgrp", "-R", authPayload.Username, fullPath)
+		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
+		err = exeCmd.Run()
+
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
 		}
 	}
 
 	res := commandResponse{
 		Message: message,
-		Path:    path,
+		Path:    pathStr,
 	}
 
 	ctx.JSON(http.StatusOK, res)
 	return
+}
+
+func (server *Server) Chroot(path string) (func() error, error) {
+	root, err := os.Open("/")
+	if err != nil {
+		return nil, err
+	}
+
+	if err := syscall.Chroot(path); err != nil {
+		root.Close()
+		return nil, err
+	}
+
+	return func() error {
+		defer root.Close()
+		if err := root.Chdir(); err != nil {
+			return err
+		}
+		return syscall.Chroot(".")
+	}, nil
 }
 
 type autoCompleteRequest struct {
@@ -758,16 +884,24 @@ func (server *Server) AutoComplete(ctx *gin.Context) {
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 	fullPath := server.config.BinPath + "/" + authPayload.Username + req.Path + termPath
 
+	pathTemp := path.Join(server.config.BinPath+"/"+authPayload.Username+req.Path, termPath)
+	if !strings.Contains(pathTemp, server.config.BinPath+"/"+authPayload.Username) {
+		err := errors.New("Location not found.")
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+
 	dirs, err := ioutil.ReadDir(fullPath)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		return
 	}
 
 	var res, raw []string
 	for _, dir := range dirs {
 		if strings.HasPrefix(dir.Name(), termRest) {
 			if dir.IsDir() {
-				res = append(res, "\u001B[1;34m"+dir.Name()+"\u001B[0m")
+				res = append(res, "\u001B[1;34m"+dir.Name()+"/\u001B[0m")
 			} else {
 				if strings.Contains(dir.Name(), ".") {
 					res = append(res, "\u001B[1;37m"+dir.Name()+"\u001B[0m")
@@ -816,7 +950,7 @@ func (server *Server) GetDirContent(ctx *gin.Context) {
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-	// file
+	// directory path
 	dirPath := server.config.BinPath + "/" + authPayload.Username + "/" + req.PathStr
 	dirs, err := ioutil.ReadDir(dirPath)
 	if err != nil {
@@ -839,7 +973,8 @@ func (server *Server) GetDirContent(ctx *gin.Context) {
 }
 
 type runCommandRequest struct {
-	PathStr string `json:"path_str" binding:"required"`
+	PathStr  string `json:"path_str" binding:"required"`
+	Username string `json:"username" binding:"required"`
 }
 
 func (server *Server) RunCommand(ctx *gin.Context) {
@@ -849,10 +984,8 @@ func (server *Server) RunCommand(ctx *gin.Context) {
 		return
 	}
 
-	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
-
 	// file
-	fullPath := server.config.BinPath + "/" + authPayload.Username + "/" + req.PathStr
+	fullPath := server.config.BinPath + "/" + req.Username + "/" + req.PathStr
 	runnerArr := strings.Split(fullPath, "/")
 	runnerDir := strings.Join(runnerArr[:(len(runnerArr)-1)], "/")
 	if fileInfo, err := os.Stat(fullPath); err != nil || fileInfo.IsDir() {
@@ -884,5 +1017,75 @@ func (server *Server) RunCommand(ctx *gin.Context) {
 		Message: message,
 	}
 
+	ctx.JSON(http.StatusOK, res)
+}
+
+type getDirFileContentRequest struct {
+	PathStr  string `json:"path_str" binding:"required"`
+	Username string `json:"username" binding:"required"`
+}
+
+type getDirFileContentResponse struct {
+	IsDir   bool         `json:"is_dir"`
+	FileStr string       `json:"file_str"`
+	DirList []dirContent `json:"dir_list"`
+}
+
+func (server *Server) GetDirFileContent(ctx *gin.Context) {
+	var req getDirFileContentRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+	file := req.PathStr
+
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
+	if authPayload.Username != req.Username {
+		err := errors.New("User not authorized to access file/directory.")
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+
+	// file
+	filePath := server.config.BinPath + "/" + authPayload.Username + "/" + file
+
+	info, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+	var res getDirFileContentResponse
+	if info.IsDir() {
+		dirs, err := ioutil.ReadDir(filePath)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+			return
+		}
+
+		var dirList []dirContent
+		const layoutTime = "2006-01-02 15:04:05"
+		for id, dir := range dirs {
+			dirList = append(dirList, dirContent{
+				Id:       id,
+				Filename: dir.Name(),
+				IsDir:    dir.IsDir(),
+				Size:     dir.Size(),
+				Path:     req.PathStr + "/" + dir.Name(),
+				ModTime:  dir.ModTime().Format(layoutTime),
+			})
+		}
+		res.IsDir = true
+		res.DirList = dirList
+
+	} else {
+		fileString, err := ioutil.ReadFile(filePath)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+			return
+		}
+		res.IsDir = false
+		res.FileStr = strings.Trim(string(fileString), " ")
+	}
 	ctx.JSON(http.StatusOK, res)
 }

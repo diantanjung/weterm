@@ -55,6 +55,8 @@ func (server *Server) setupRouter() {
 	router.POST("/users/login", server.loginUser)
 	router.GET("/ws", server.WebSocket)
 
+	router.POST("/run", server.RunCommand)
+
 	authRoutes := router.Group("/").Use(authMiddleware(server.tokenMaker))
 	authRoutes.POST("/users", server.createUser)
 	authRoutes.GET("/user", server.getUser)
@@ -76,9 +78,11 @@ func (server *Server) setupRouter() {
 
 	authRoutes.POST("/opendir", server.GetDirContent)
 
+	authRoutes.POST("/opendirfile", server.GetDirFileContent)
+
 	authRoutes.POST("/terminal", server.Terminal)
 	authRoutes.POST("/autocomplete", server.AutoComplete)
-	authRoutes.POST("/run", server.RunCommand)
+
 	//authRoutes.POST("/ws", server.WebSocket)
 
 	server.router = router
