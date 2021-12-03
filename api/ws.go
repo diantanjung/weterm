@@ -55,6 +55,8 @@ func (server *Server) pumpStdin(ws *websocket.Conn, w io.Writer) {
 			username := msgArr[0]
 			curPath := msgArr[1]
 
+			curPath = strings.Replace(curPath, "~", "/home/"+username, -1)
+
 			cdStr := "cd " + server.config.BinPath + "/" + username + "/" + curPath
 			cdMsg := []byte(cdStr)
 			cdMsg = append(cdMsg, '\n')

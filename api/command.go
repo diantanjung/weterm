@@ -439,6 +439,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
 	reqPath := req.Path
+	reqPath = strings.Replace(reqPath, "~", "/home/"+authPayload.Username, -1)
 	reqPathArr := strings.Split(reqPath, "/")
 	lenPathArr := len(reqPathArr)
 	fullPath := server.config.BinPath + "/" + authPayload.Username + reqPath
@@ -460,6 +461,12 @@ func (server *Server) Terminal(ctx *gin.Context) {
 			if val[0:1] == "/" {
 				exeArr[i] = server.config.BinPath + "/" + authPayload.Username + val
 			}
+
+			exeArr[i] = strings.Replace(exeArr[i], "~", server.config.BinPath+"/"+authPayload.Username+"/home/"+authPayload.Username+"/", -1)
+
+			//if val == "~" {
+			//	exeArr[i] = server.config.BinPath + "/" + authPayload.Username + "/home/" + authPayload.Username
+			//}
 
 			if rgxPath.MatchString(val) {
 				pathTemp := path.Join(fullPath+"/", val)
@@ -531,7 +538,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		lenDot := len(exeArr[1])
 		if isDot && lenDot > 1 {
 			if lenPathArr < lenDot {
-				err := errors.New("Directory not found.")
+				err := errors.New("Directory not found")
 				ctx.JSON(http.StatusBadRequest, errorResponse(err))
 				return
 			}
@@ -540,7 +547,9 @@ func (server *Server) Terminal(ctx *gin.Context) {
 				cdPath = "/" + joinStr
 			}
 		} else {
-			if exeArr[1][0:1] == "/" {
+			if exeArr[1][0:1] == "~" {
+				cdPath = "/home/" + authPayload.Username + exeArr[1][1:]
+			} else if exeArr[1][0:1] == "/" {
 				cdPath = exeArr[1]
 			} else {
 				lenReqPath := len(reqPath)
@@ -549,6 +558,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 				} else {
 					cdPath = reqPath + "/" + exeArr[1]
 				}
+
 			}
 		}
 		if cdPath != "" {
@@ -557,7 +567,8 @@ func (server *Server) Terminal(ctx *gin.Context) {
 				ctx.JSON(http.StatusBadRequest, errorResponse(err))
 				return
 			}
-			message = cdPath
+			message = strings.Replace(cdPath, "/home/"+authPayload.Username, "~", -1)
+
 		} else {
 			message = "/"
 		}
@@ -728,23 +739,6 @@ func (server *Server) Terminal(ctx *gin.Context) {
 			args = exeArr[2:]
 		}
 
-		//copy /dev/null
-		exeCmd := exec.Command("mkdir", "dev")
-		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
-		err := exeCmd.Run()
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-
-		exeCmd = exec.Command("cp", "/dev/null", "dev/null")
-		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
-		err = exeCmd.Run()
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-
 		//Chroot in user home
 		exit, err := server.Chroot(server.config.BinPath + "/" + authPayload.Username)
 		if err != nil {
@@ -752,43 +746,36 @@ func (server *Server) Terminal(ctx *gin.Context) {
 			return
 		}
 
-		exeCmd = exec.Command(filePath, args[0:]...)
+		//exeCmd := exec.Command(filePath, args[0:]...)
+		args = append([]string{"-u", authPayload.Username, filePath}, args[0:]...)
+		exeCmd := exec.Command("sudo", args[0:]...)
 		exeCmd.Dir = runnerDir
-		//exeCmd := exec.Command(filePath)
-		//exeCmd.Dir = reqPath
 		var out bytes.Buffer
 		var stderr bytes.Buffer
 		exeCmd.Stdout = &out
 		exeCmd.Stderr = &stderr
-		err = exeCmd.Run()
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+
+		_ = exeCmd.Run()
+		//if err != nil {
+		//	exit()
+		//	err = errors.New(stderr.String())
+		//	ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		//	return
+		//}
+
+		if len(stderr.String()) > 0 {
 			exit()
-			exeCmd = exec.Command("rm", "-r", server.config.BinPath+"/"+authPayload.Username+"/dev")
-			exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
-			err := exeCmd.Run()
-			if err != nil {
-				ctx.JSON(http.StatusBadRequest, errorResponse(err))
-				return
-			}
+			err = errors.New(stderr.String())
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
 		}
 
 		if len(out.String()) > 0 {
 			message = out.String()
-		} else {
-			message = "Succes to execute command."
 		}
 
 		//exit from the chroot
 		if err := exit(); err != nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-		exeCmd = exec.Command("rm", "-r", server.config.BinPath+"/"+authPayload.Username+"/dev")
-		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
-		err = exeCmd.Run()
-		if err != nil {
 			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
 		}
@@ -882,7 +869,17 @@ func (server *Server) AutoComplete(ctx *gin.Context) {
 	}
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
-	fullPath := server.config.BinPath + "/" + authPayload.Username + req.Path + termPath
+
+	termRest = strings.Replace(termRest, "~", "/home/"+authPayload.Username, -1)
+
+	var fullPath = ""
+	if termPath != "" && termPath[0:1] == "~" {
+		termPath = strings.Replace(termPath, "~", "/home/"+authPayload.Username, -1)
+		fullPath = server.config.BinPath + "/" + authPayload.Username + termPath
+	} else {
+		req.Path = strings.Replace(req.Path, "~", "/home/"+authPayload.Username+"/", -1)
+		fullPath = server.config.BinPath + "/" + authPayload.Username + req.Path + termPath
+	}
 
 	pathTemp := path.Join(server.config.BinPath+"/"+authPayload.Username+req.Path, termPath)
 	if !strings.Contains(pathTemp, server.config.BinPath+"/"+authPayload.Username) {
