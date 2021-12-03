@@ -916,6 +916,12 @@ func (server *Server) AutoComplete(ctx *gin.Context) {
 		raw[0] = cmdAuto + " " + termPath + res[0]
 	}
 
+	if len(res) == 1 && termPath == "./" {
+		lenRes := len(res[0])
+		res[0] = termPath + res[0][7:lenRes-4]
+		raw[0] = res[0]
+	}
+
 	resp := autoCompleteResponse{
 		Colored: res,
 		Pure:    raw,
