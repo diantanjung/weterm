@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -722,6 +724,45 @@ func (server *Server) Terminal(ctx *gin.Context) {
 				message = strCut
 			}
 		}
+	case "cp":
+		exeCmd := exec.Command("cp", exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			message = out.String()
+		}
+	case "mv":
+		exeCmd := exec.Command("mv", exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			message = out.String()
+		}
+	case "git":
+		exeCmd := exec.Command("git", exeArr[1:]...)
+		exeCmd.Dir = fullPath
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		exeCmd.Stdout = &out
+		exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = stderr.String()
+		} else {
+			message = out.String()
+		}
 	default:
 		filePath := reqPath + "/" + exeArr[0]
 		if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath); err != nil || fileInfo.IsDir() {
@@ -740,15 +781,47 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		}
 
 		//Chroot in user home
-		exit, err := server.Chroot(server.config.BinPath + "/" + authPayload.Username)
+		//exit, err := server.Chroot(server.config.BinPath + "/" + authPayload.Username)
+		//if err != nil {
+		//	ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		//	return
+		//}
+
+		newUser, err := user.Lookup(authPayload.Username)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
+		}
+		uid, err := strconv.ParseUint(newUser.Uid, 10, 32)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			return
+		}
+		auid := uint32(uid)
+
+		gid, err := strconv.ParseUint(newUser.Gid, 10, 32)
 		if err != nil {
 			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
 		}
 
-		//exeCmd := exec.Command(filePath, args[0:]...)
-		args = append([]string{"-u", authPayload.Username, filePath}, args[0:]...)
-		exeCmd := exec.Command("sudo", args[0:]...)
+		agid := uint32(gid)
+
+		//groups,err := newUser.GroupIds()
+		//
+		//grid, err := strconv.ParseUint(groups[0],10,32)
+		//if err != nil {
+		//	ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		//	return
+		//}
+		//
+		//agrid := uint32(grid)
+
+		exeCmd := exec.Command(filePath, args[0:]...)
+		//args = append([]string{"-u", authPayload.Username, filePath}, args[0:]...)
+		//exeCmd := exec.Command("sudo",args[0:]...)
+		//exeCmd.SysProcAttr = &syscall.SysProcAttr{Credential:&syscall.Credential{Uid: auid, Gid: agid,Groups: []uint32{agrid}}}
+		exeCmd.SysProcAttr = &syscall.SysProcAttr{Chroot: server.config.BinPath + "/" + authPayload.Username, Credential: &syscall.Credential{Uid: auid, Gid: agid}}
 		exeCmd.Dir = runnerDir
 		var out bytes.Buffer
 		var stderr bytes.Buffer
@@ -764,7 +837,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		//}
 
 		if len(stderr.String()) > 0 {
-			exit()
+			//exit()
 			err = errors.New(stderr.String())
 			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
@@ -775,10 +848,10 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		}
 
 		//exit from the chroot
-		if err := exit(); err != nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
+		//if err := exit(); err != nil {
+		//	ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		//	return
+		//}
 	}
 
 	if os := runtime.GOOS; os == "linux" {
@@ -875,10 +948,12 @@ func (server *Server) AutoComplete(ctx *gin.Context) {
 	var fullPath = ""
 	if termPath != "" && termPath[0:1] == "~" {
 		termPath = strings.Replace(termPath, "~", "/home/"+authPayload.Username, -1)
-		fullPath = server.config.BinPath + "/" + authPayload.Username + termPath
+		//fullPath = server.config.BinPath + "/" + authPayload.Username + termPath
+		fullPath = path.Join(server.config.BinPath, authPayload.Username, termPath)
 	} else {
 		req.Path = strings.Replace(req.Path, "~", "/home/"+authPayload.Username+"/", -1)
-		fullPath = server.config.BinPath + "/" + authPayload.Username + req.Path + termPath
+		//fullPath = server.config.BinPath + "/" + authPayload.Username + req.Path + termPath
+		fullPath = path.Join(server.config.BinPath, authPayload.Username, req.Path, termPath)
 	}
 
 	pathTemp := path.Join(server.config.BinPath+"/"+authPayload.Username+req.Path, termPath)
@@ -899,27 +974,29 @@ func (server *Server) AutoComplete(ctx *gin.Context) {
 		if strings.HasPrefix(dir.Name(), termRest) {
 			if dir.IsDir() {
 				res = append(res, "\u001B[1;34m"+dir.Name()+"/\u001B[0m")
+				raw = append(raw, dir.Name()+"/")
 			} else {
 				if strings.Contains(dir.Name(), ".") {
 					res = append(res, "\u001B[1;37m"+dir.Name()+"\u001B[0m")
 				} else {
 					res = append(res, "\u001B[1;31m"+dir.Name()+"\u001B[0m")
 				}
+				raw = append(raw, dir.Name())
 			}
-			raw = append(raw, dir.Name())
+
 		}
 	}
 
 	if len(res) == 1 && cmdAuto != "" {
 		lenRes := len(res[0])
 		res[0] = cmdAuto + " " + termPath + res[0][7:lenRes-4]
-		raw[0] = cmdAuto + " " + termPath + res[0]
+		raw[0] = cmdAuto + " " + termPath + raw[0]
 	}
 
-	if len(res) == 1 && termPath == "./" {
+	if len(res) == 1 && cmdAuto == "" {
 		lenRes := len(res[0])
 		res[0] = termPath + res[0][7:lenRes-4]
-		raw[0] = res[0]
+		raw[0] = termPath + raw[0]
 	}
 
 	resp := autoCompleteResponse{
