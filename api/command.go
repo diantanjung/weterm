@@ -14,7 +14,6 @@ import (
 	"os/user"
 	"path"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -430,7 +429,10 @@ func (server *Server) Terminal(ctx *gin.Context) {
 	req.Exe = rgxExe.ReplaceAllString(req.Exe, " ")
 	req.Exe = strings.Trim(req.Exe, " ")
 
-	exeArr := strings.Split(req.Exe, " ")
+	// exeArr := strings.Split(req.Exe, " ")
+
+	r := regexp.MustCompile("'.+'|\".+\"|\\S+")
+	exeArr := r.FindAllString(req.Exe, -1)
 
 	//if len(exeArr) > 2 {
 	//	err := errors.New("Format command not found.")
@@ -448,6 +450,26 @@ func (server *Server) Terminal(ctx *gin.Context) {
 
 	message := ""
 	pathStr := ""
+
+	newUser, err := user.Lookup(authPayload.Username)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+	uid, err := strconv.ParseUint(newUser.Uid, 10, 32)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+	auid := uint32(uid)
+
+	gid, err := strconv.ParseUint(newUser.Gid, 10, 32)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+
+	agid := uint32(gid)
 
 	switch exeArr[0] {
 	case "ls":
@@ -635,6 +657,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		var stderr bytes.Buffer
 		exeCmd.Stdout = &out
 		exeCmd.Stderr = &stderr
+		exeCmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: auid, Gid: agid}}
 		err := exeCmd.Run()
 		if err != nil {
 			message = stderr.String()
@@ -674,6 +697,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		var stderr bytes.Buffer
 		exeCmd.Stdout = &out
 		exeCmd.Stderr = &stderr
+		exeCmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: auid, Gid: agid}}
 		err := exeCmd.Run()
 		if err != nil {
 			message = stderr.String()
@@ -687,6 +711,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		var stderr bytes.Buffer
 		exeCmd.Stdout = &out
 		exeCmd.Stderr = &stderr
+		exeCmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: auid, Gid: agid}}
 		err := exeCmd.Run()
 		if err != nil {
 			message = stderr.String()
@@ -700,6 +725,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		var stderr bytes.Buffer
 		exeCmd.Stdout = &out
 		exeCmd.Stderr = &stderr
+		exeCmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: auid, Gid: agid}}
 		err := exeCmd.Run()
 		if err != nil {
 			message = stderr.String()
@@ -731,6 +757,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		var stderr bytes.Buffer
 		exeCmd.Stdout = &out
 		exeCmd.Stderr = &stderr
+		exeCmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: auid, Gid: agid}}
 		err := exeCmd.Run()
 		if err != nil {
 			message = stderr.String()
@@ -744,6 +771,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		var stderr bytes.Buffer
 		exeCmd.Stdout = &out
 		exeCmd.Stderr = &stderr
+		exeCmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: auid, Gid: agid}}
 		err := exeCmd.Run()
 		if err != nil {
 			message = stderr.String()
@@ -755,6 +783,7 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		exeCmd.Dir = fullPath
 		var out bytes.Buffer
 		var stderr bytes.Buffer
+		// exeCmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: auid, Gid: agid}}
 		exeCmd.Stdout = &out
 		exeCmd.Stderr = &stderr
 		err := exeCmd.Run()
@@ -772,40 +801,31 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		}
 
 		var args []string
-		//runner := server.config.BinPath + "/" + authPayload.Username + filePath
 		runnerArr := strings.Split(filePath, "/")
 		runnerDir := strings.Join(runnerArr[:(len(runnerArr)-1)], "/")
 
 		if len(exeArr) > 1 {
 			args = exeArr[2:]
 		}
+		// newUser, err := user.Lookup(authPayload.Username)
+		// if err != nil {
+		// 	ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		// 	return
+		// }
+		// uid, err := strconv.ParseUint(newUser.Uid, 10, 32)
+		// if err != nil {
+		// 	ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		// 	return
+		// }
+		// auid := uint32(uid)
 
-		//Chroot in user home
-		//exit, err := server.Chroot(server.config.BinPath + "/" + authPayload.Username)
-		//if err != nil {
-		//	ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		//	return
-		//}
+		// gid, err := strconv.ParseUint(newUser.Gid, 10, 32)
+		// if err != nil {
+		// 	ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		// 	return
+		// }
 
-		newUser, err := user.Lookup(authPayload.Username)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-		uid, err := strconv.ParseUint(newUser.Uid, 10, 32)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-		auid := uint32(uid)
-
-		gid, err := strconv.ParseUint(newUser.Gid, 10, 32)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-
-		agid := uint32(gid)
+		// agid := uint32(gid)
 
 		//groups,err := newUser.GroupIds()
 		//
@@ -818,9 +838,6 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		//agrid := uint32(grid)
 
 		exeCmd := exec.Command(filePath, args[0:]...)
-		//args = append([]string{"-u", authPayload.Username, filePath}, args[0:]...)
-		//exeCmd := exec.Command("sudo",args[0:]...)
-		//exeCmd.SysProcAttr = &syscall.SysProcAttr{Credential:&syscall.Credential{Uid: auid, Gid: agid,Groups: []uint32{agrid}}}
 		exeCmd.SysProcAttr = &syscall.SysProcAttr{Chroot: server.config.BinPath + "/" + authPayload.Username, Credential: &syscall.Credential{Uid: auid, Gid: agid}}
 		exeCmd.Dir = runnerDir
 		var out bytes.Buffer
@@ -829,15 +846,8 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		exeCmd.Stderr = &stderr
 
 		_ = exeCmd.Run()
-		//if err != nil {
-		//	exit()
-		//	err = errors.New(stderr.String())
-		//	ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		//	return
-		//}
 
 		if len(stderr.String()) > 0 {
-			//exit()
 			err = errors.New(stderr.String())
 			ctx.JSON(http.StatusBadRequest, errorResponse(err))
 			return
@@ -845,32 +855,6 @@ func (server *Server) Terminal(ctx *gin.Context) {
 
 		if len(out.String()) > 0 {
 			message = out.String()
-		}
-
-		//exit from the chroot
-		//if err := exit(); err != nil {
-		//	ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		//	return
-		//}
-	}
-
-	if os := runtime.GOOS; os == "linux" {
-		exeCmd := exec.Command("chown", "-R", authPayload.Username, fullPath)
-		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
-		err := exeCmd.Run()
-
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
-		}
-
-		exeCmd = exec.Command("chgrp", "-R", authPayload.Username, fullPath)
-		exeCmd.Dir = server.config.BinPath + "/" + authPayload.Username
-		err = exeCmd.Run()
-
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
-			return
 		}
 	}
 
