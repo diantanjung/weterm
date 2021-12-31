@@ -792,6 +792,20 @@ func (server *Server) Terminal(ctx *gin.Context) {
 		} else {
 			message = out.String()
 		}
+	case "nano":
+		exeCmd := exec.Command("nano")
+		exeCmd.Dir = fullPath
+		// var out bytes.Buffer
+		// var stderr bytes.Buffer
+		// // exeCmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: auid, Gid: agid}}
+		// exeCmd.Stdout = &out
+		// exeCmd.Stderr = &stderr
+		err := exeCmd.Run()
+		if err != nil {
+			message = err.Error()
+		} else {
+			message = "succes"
+		}
 	default:
 		filePath := reqPath + "/" + exeArr[0]
 		if fileInfo, err := os.Stat(server.config.BinPath + "/" + authPayload.Username + filePath); err != nil || fileInfo.IsDir() {

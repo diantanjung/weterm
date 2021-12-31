@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	// pathDir = "/home/dian/go/src/github.com/diantanjung/wecom/" //local
-	pathDir = "/home/dian/go/bin/wecom2/" //production
+	pathDir = "/home/dian/go/src/github.com/diantanjung/wecom/" //local
+	// pathDir = "/home/dian/go/bin/wecom2/" //production
 )
 func main() {
 	config, err := util.LoadConfig(pathDir)
