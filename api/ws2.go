@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/creack/pty"
@@ -46,7 +45,7 @@ type TTYSize struct {
 func (server *Server) WebSocket2(ctx *gin.Context) {
 	// func GetHandler(opts HandlerOpts) func(http.ResponseWriter, *http.Request) {
 	opts := HandlerOpts{
-		AllowedHostnames:     []string{"localhost"},
+		AllowedHostnames:     []string{"localhost", "168.235.77.142"},
 		Arguments:            []string{},
 		Command:              "/bin/bash",
 		ConnectionErrorLimit: 10,
@@ -78,10 +77,10 @@ func (server *Server) WebSocket2(ctx *gin.Context) {
 	args := opts.Arguments
 	fmt.Println("starting new tty using command '%s' with arguments ['%s']...", terminal, strings.Join(args, "', '"))
 	// cmd := exec.Command(terminal, args...)
-	cmd := exec.Command("sudo", "-u", username, "/usr/bin/zsh")
+	cmd := exec.Command("sudo", "-u", username, "/bin/bash")
 	cmd.Dir = "/home/" + username
 	// cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 1000, Gid: 1000}}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Chroot: "/home/dian/user/" + username}
+	// cmd.SysProcAttr = &syscall.SysProcAttr{Chroot: "/home/dian/user/" + username}
 	cmd.Env = os.Environ()
 	tty, err := pty.Start(cmd)
 	if err != nil {
