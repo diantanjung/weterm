@@ -1,5 +1,6 @@
 # development artifacts
 .ssh
+.env
 
 # node dependencies
 node_modules
