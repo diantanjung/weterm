@@ -1,18 +1,22 @@
 package main
 
 import (
+	"log"
+	"os"
+
 	"github.com/diantanjung/wecom/api"
 	"github.com/diantanjung/wecom/db"
 	db2 "github.com/diantanjung/wecom/db/sqlc"
 	"github.com/diantanjung/wecom/util"
-	"log"
 )
 
 const (
 	// pathDir = "/home/dian/go/src/github.com/diantanjung/wecom/" //local
-	pathDir = "/home/dian/go/bin/" //production
+	// pathDir = "/home/dian/go/bin/" //production
+
 )
 func main() {
+	pathDir, _ := os.Getwd()
 	config, err := util.LoadConfig(pathDir)
 	if err != nil {
 		log.Fatal("cannot load config:", err)

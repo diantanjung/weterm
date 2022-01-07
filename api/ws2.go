@@ -77,7 +77,8 @@ func (server *Server) WebSocket2(ctx *gin.Context) {
 	args := opts.Arguments
 	fmt.Println("starting new tty using command '%s' with arguments ['%s']...", terminal, strings.Join(args, "', '"))
 	// cmd := exec.Command(terminal, args...)
-	cmd := exec.Command("sudo", "-u", username, "/bin/bash")
+	// cmd := exec.Command("sudo", "-u", username, "/bin/bash")
+	cmd := exec.Command("/bin/bash")
 	cmd.Dir = "/home/" + username
 	// cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 1000, Gid: 1000}}
 	// cmd.SysProcAttr = &syscall.SysProcAttr{Chroot: "/home/dian/user/" + username}
