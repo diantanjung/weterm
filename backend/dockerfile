@@ -1,0 +1,6 @@
+FROM golang:1.17.5-alpine3.15 as build-stage
+WORKDIR /app
+COPY . .
+RUN go build -o weterm
+RUN apk add --no-cache bash
+CMD ["/app/weterm"]

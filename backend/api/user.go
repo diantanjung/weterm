@@ -3,13 +3,14 @@ package api
 import (
 	"database/sql"
 	"errors"
-	"github.com/diantanjung/wecom/token"
 	"net/http"
 	"os/exec"
 	"time"
 
-	db "github.com/diantanjung/wecom/db/sqlc"
-	"github.com/diantanjung/wecom/util"
+	"github.com/diantanjung/weterm/backend/token"
+
+	db "github.com/diantanjung/weterm/backend/db/sqlc"
+	"github.com/diantanjung/weterm/backend/util"
 	"github.com/gin-gonic/gin"
 	"github.com/lib/pq"
 )

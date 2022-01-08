@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/diantanjung/wecom/token"
+	"github.com/diantanjung/weterm/backend/token"
 	"github.com/gin-gonic/gin"
 )
 

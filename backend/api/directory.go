@@ -2,11 +2,12 @@ package api
 
 import (
 	"database/sql"
-	db "github.com/diantanjung/wecom/db/sqlc"
-	"github.com/gin-gonic/gin"
-	"github.com/lib/pq"
 	"net/http"
 	"time"
+
+	db "github.com/diantanjung/weterm/backend/db/sqlc"
+	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 )
 
 type createUserDirRequest struct {

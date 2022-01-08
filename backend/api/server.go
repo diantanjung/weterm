@@ -3,9 +3,9 @@ package api
 import (
 	"fmt"
 
-	db2 "github.com/diantanjung/wecom/db/sqlc"
-	"github.com/diantanjung/wecom/token"
-	"github.com/diantanjung/wecom/util"
+	db2 "github.com/diantanjung/weterm/backend/db/sqlc"
+	"github.com/diantanjung/weterm/backend/token"
+	"github.com/diantanjung/weterm/backend/util"
 	"github.com/gin-gonic/gin"
 )
 
@@ -56,7 +56,6 @@ func (server *Server) setupRouter() {
 	router.POST("/users/login", server.loginUser)
 	// router.GET("/ws", server.WebSocket)
 	router.GET("/ws2/:username", server.WebSocket2)
-
 
 	router.POST("/run", server.RunCommand)
 

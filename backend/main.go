@@ -4,17 +4,18 @@ import (
 	"log"
 	"os"
 
-	"github.com/diantanjung/wecom/api"
-	"github.com/diantanjung/wecom/db"
-	db2 "github.com/diantanjung/wecom/db/sqlc"
-	"github.com/diantanjung/wecom/util"
+	"github.com/diantanjung/weterm/backend/api"
+	"github.com/diantanjung/weterm/backend/db"
+	db2 "github.com/diantanjung/weterm/backend/db/sqlc"
+	"github.com/diantanjung/weterm/backend/util"
 )
 
 const (
-	// pathDir = "/home/dian/go/src/github.com/diantanjung/wecom/" //local
-	// pathDir = "/home/dian/go/bin/" //production
+// pathDir = "/home/dian/go/src/github.com/diantanjung/weterm/backend/" //local
+// pathDir = "/home/dian/go/bin/" //production
 
 )
+
 func main() {
 	pathDir, _ := os.Getwd()
 	config, err := util.LoadConfig(pathDir)

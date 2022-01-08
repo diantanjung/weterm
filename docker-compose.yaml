@@ -1,0 +1,28 @@
+version: '3'
+services:
+    weterm-postgres:
+        image: postgres
+        ports:
+            - 5432:5432
+        environment:
+            - POSTGRES_USER=postgres
+            - POSTGRES_PASSWORD=rahasia
+            - POSTGRES_DB=weterm
+        volumes:
+            - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    weterm-backend:
+        build: ./backend
+        ports:
+            - 9000:9000
+        environment:
+            - DB_USER=postgres
+            - DB_PASSWORD=rahasia
+            - DB_HOST=weterm-postgres
+            - DB_PORT=5432
+            - DB_DATABASE=weterm
+        depends_on:
+            - weterm-postgres
+    weterm-frontend:
+        build: ./frontend
+        ports:
+            - 3000:3000

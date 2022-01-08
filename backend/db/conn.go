@@ -3,7 +3,8 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"github.com/diantanjung/wecom/util"
+
+	"github.com/diantanjung/weterm/backend/util"
 	_ "github.com/lib/pq"
 )
 

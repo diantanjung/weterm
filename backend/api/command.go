@@ -3,10 +3,6 @@ package api
 import (
 	"bytes"
 	"errors"
-	"github.com/creack/pty"
-	db "github.com/diantanjung/wecom/db/sqlc"
-	"github.com/diantanjung/wecom/token"
-	"github.com/gin-gonic/gin"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -17,6 +13,11 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/creack/pty"
+	db "github.com/diantanjung/weterm/backend/db/sqlc"
+	"github.com/diantanjung/weterm/backend/token"
+	"github.com/gin-gonic/gin"
 )
 
 type commandResponse struct {

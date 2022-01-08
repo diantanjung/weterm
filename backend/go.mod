@@ -1,9 +1,9 @@
-module github.com/diantanjung/wecom
+module github.com/diantanjung/weterm/backend
 
 go 1.16
 
 require (
-	github.com/creack/pty v1.1.16
+	github.com/creack/pty v1.1.17
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/gin-contrib/cors v1.3.1 // indirect
 	github.com/gin-gonic/gin v1.7.4
